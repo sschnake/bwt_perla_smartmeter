@@ -10,12 +10,15 @@ except ImportError:
 import pytesseract
 import re
 import paho.mqtt.client as mqtt
+import datetime
+import time
 
-bwt_ipaddress = "192.168.0.247"
-bwt_password="passwd"
-mqtt_address="192.168.0.6"
-mqtt_topic_throughput="/raspberrypi1/smartmeter/bwt/durchfluss"
-mqtt_topic_volume="/raspberrypi1/smartmeter/bwt/volumen"
+old_time = datetime.datetime.now()
+bwt_ipaddress = "192.168.186.69"
+bwt_password="password"
+mqtt_address="192.168.186.100"
+mqtt_topic_throughput="smartmeter/bwt/durchfluss"
+mqtt_topic_volume="smartmeter/bwt/volumen"
 
 #def bwt_connect():
 vncclient = api.connect(bwt_ipaddress, password=None)
@@ -44,29 +47,30 @@ def bwt_login():
 bwt_login()
 
 mqttclient=mqtt.Client()
+mqttclient.username_pw_set("mqttuser", "mqttpass")
 mqttclient.connect(mqtt_address, 1883, 20)
 mqttclient.loop_start()
 mqttclient.reconnect_delay_set(min_delay=1, max_delay=120)
-throughput_old=-1
-volume_old=-1
+throughput_old = -1
+volume_old = -1
 while True:
     # Capture regions
     vncclient.captureRegion('throughput.png',110,140,280,50)
     vncclient.captureRegion('volume.png',145,300,200,50)
     throughputocroutput=pytesseract.image_to_string(Image.open('throughput.png'),lang = 'eng',config = '-c page_separator=""')
     volumeocroutput=pytesseract.image_to_string(Image.open('volume.png'),lang = 'eng',config = '-c page_separator=""')
-    #print("=============================")
-    #print("OCR result troughput: ",throughputocroutput.strip())
-    #print("OCR result volume: ",volumeocroutput.strip())
+    print("=============================")
+    print("OCR result troughput: ",throughputocroutput.strip())
+    print("OCR result volume: ",volumeocroutput.strip())
     ### Throughput
     #throughput=re.search('(.*)\|*[MIl1\|]/h', throughputocroutput)
     throughput=re.search('(.*)\|*./h', throughputocroutput)
     #print("Throughput regex:",throughput)
     if throughput:
-        throughput=throughput.group(1)
-        throughput=throughput.strip()
-        if throughput=="O":
-            throughput=0
+        throughput = throughput.group(1)
+        throughput = throughput.strip()
+        if throughput == "O":
+            throughput = 0
         #print("Throughput:",throughput)
     else:
         print('OCR throughput failed')
@@ -82,9 +86,9 @@ while True:
     volume=re.search('(.*)[Il1\|]', volumeocroutput)
     #print("Volume regex:",volume)
     if volume:
-        volume=volume.group(1)
-        volume=volume.strip()
-        if volume=="O":
+        volume = volume.group(1)
+        volume = volume.strip()
+        if volume == "O":
             volume=0
         #print("Volume:",volume)
     else:
@@ -98,20 +102,39 @@ while True:
     vncclient.mouseMove(400,0)
     vncclient.mouseDown(1)
     vncclient.mouseUp(1)
-    if throughput!=throughput_old:
-        #print("MQTT: Publish throughput: ",throughput)
+    #print(datetime.datetime.now())
+    #print(old_time + datetime.timedelta(minutes=3))
+    #print(old_time)
+    if datetime.datetime.now() > old_time + datetime.timedelta(minutes=3):
+        old_time = datetime.datetime.now()
         try:
             mqttclient.publish(mqtt_topic_throughput, payload=throughput, qos=1, retain=False)
         except:
             print("MQTT: Publish throughput failed!")
-        throughput_old=throughput
-    if volume!=volume_old:
-        #print("MQTT: Publish volume:    ",volume)
         try:
             mqttclient.publish(mqtt_topic_volume, payload=volume, qos=1, retain=False)
         except:
             print("MQTT: Publish volume failed!")
-        volume_old=volume
+        volume_old = volume
+
+    if throughput != throughput_old:
+        print("MQTT: Publish throughput: ",throughput)
+        try:
+            mqttclient.publish(mqtt_topic_throughput, payload=throughput, qos=1, retain=False)
+            old_time = datetime.datetime.now()
+        except:
+            print("MQTT: Publish throughput failed!")
+        throughput_old=throughput
+    if volume != volume_old:
+        print("MQTT: Publish volume:    ",volume)
+        try:
+            mqttclient.publish(mqtt_topic_volume, payload=volume, qos=1, retain=False)
+            old_time = datetime.datetime.now()
+        except:
+            print("MQTT: Publish volume failed!")
+        volume_old = volume
+    time.sleep(30)
+
 
 
 
